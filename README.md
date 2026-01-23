@@ -1,4 +1,8 @@
 # ICU-generative-events
+
+**Abstract**  
+ICU data present major challenges for machine learning due to irregular sampling, continuous-valued measurements and hospital-specific clinical practices, leading to poor generalisation of single-centre models. This project implements an end-to-end generative pretraining pipeline for ICU clinical event sequences using the eICU Collaborative Research Database. ICU stays are represented as sequences of timestamped vital signs and laboratory events, which are discretised and tokenised for Transformer-based modeling. A foundation model is pretrained using masked event modeling and subsequently fine-tuned for in-hospital mortality prediction. Model performance is evaluated under hospital-held-out splits to assess cross-site generalisation. This repository provides a reproducible baseline for generative representation learning on irregular, multi-centre ICU data.
+
 **Generative pretraining for irregular ICU clinical event sequences (eICU-CRD) with hospital-held-out generalisation.**
 
 This repository implements an end-to-end clinical ML pipeline inspired by recent “foundation model” approaches for ICU data:
