@@ -6,3 +6,5 @@ data/raw/
 data/processed/
 outputs/
 .DS_Store
+
+artifacts/
