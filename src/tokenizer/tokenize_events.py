@@ -14,8 +14,7 @@ def load_json(path: Path) -> Dict[str, Any]:
 
 
 def bin_value(x: float, edges: list[float]) -> int:
-    # returns bin index in [0..len(edges)-2]
-    # edges are sorted; np.digitize returns 1..len(edges)-1
+    # Map value to bin index using the edges
     idx = int(np.digitize([x], edges, right=False)[0] - 1)
     return max(0, min(idx, len(edges) - 2))
 
@@ -33,10 +32,10 @@ def tokenize(events_path: Path, tokenizer_dir: Path, out_path: Path) -> None:
     events["variable"] = events["variable"].astype(str).str.strip()
     events = events[events["variable"].isin(variable_vocab.keys())].copy()
 
-    # map variable -> id
+    # Convert variable names to IDs
     events["variable_id"] = events["variable"].map(variable_vocab).astype(int)
 
-    # bin continuous values per variable
+    # Discretize continuous values into bins
     def _bin_row(row) -> int:
         v = row["variable"]
         edges = value_bins[v]["edges"]
@@ -44,11 +43,11 @@ def tokenize(events_path: Path, tokenizer_dir: Path, out_path: Path) -> None:
 
     events["value_bin"] = events.apply(_bin_row, axis=1).astype(int)
 
-    # compute dt (time gap) per patient
+    # Calculate time since previous event for each patient
     events = events.sort_values(["patient_id", "time_hours"]).reset_index(drop=True)
     events["dt_hours"] = events.groupby("patient_id")["time_hours"].diff().fillna(0.0).clip(lower=0.0)
 
-    # keep only what the model needs
+    # Keep only the columns we need
     tokens = events[
         ["patient_id", "hospital_id", "time_hours", "dt_hours", "variable_id", "value_bin"]
     ].copy()

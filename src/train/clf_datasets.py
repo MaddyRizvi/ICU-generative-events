@@ -11,11 +11,7 @@ from src.train.datasets import bucketize_dt
 
 
 class PatientMortalityDataset(Dataset):
-    """
-    One sequence window per patient (first max_len events).
-    Returns:
-      var_ids, val_ids, dt_bucket, attn_mask, label
-    """
+    """Dataset for mortality prediction (one window per patient)."""
 
     def __init__(
         self,

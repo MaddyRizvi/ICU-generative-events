@@ -7,12 +7,12 @@ import pandas as pd
 
 
 def _read_csv(path: Path) -> pd.DataFrame:
-    # pandas reads .csv.gz directly
+    # pandas handles .csv.gz natively
     return pd.read_csv(path, low_memory=False)
 
 
 def _find(raw_dir: Path, name: str) -> Path:
-    # name like "patient" -> patient.csv.gz or patient.csv
+    # find file regardless of .csv or .csv.gz extension
     name = name.lower()
     for p in raw_dir.iterdir():
         if not p.is_file():
@@ -26,9 +26,7 @@ def _find(raw_dir: Path, name: str) -> Path:
 def build_events(raw_dir: Path, out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # -----------------------
-    # 1) PATIENT (labels + hospital_id)
-    # -----------------------
+    # Load patient data for labels and hospital IDs
     patient_path = _find(raw_dir, "patient")
     patient = _read_csv(patient_path)
 
@@ -40,7 +38,7 @@ def build_events(raw_dir: Path, out_dir: Path) -> None:
     labels = patient[["patientunitstayid", "hospitalid", "unitdischargeoffset"]].copy()
     labels["los_hours"] = labels["unitdischargeoffset"] / 60.0
 
-    # Mortality: use unitdischargestatus if present
+    # Mark mortality if discharge status shows "expired"
     if "unitdischargestatus" in patient.columns:
         labels["mortality"] = patient["unitdischargestatus"].astype(str).str.lower().eq("expired").astype(int)
     else:
@@ -53,9 +51,7 @@ def build_events(raw_dir: Path, out_dir: Path) -> None:
         }
     )[["patient_id", "hospital_id", "los_hours", "mortality"]]
 
-    # -----------------------
-    # 2) VITALS (vitalPeriodic preferred, fallback to vitalAperiodic)
-    # -----------------------
+    # Try to find vitals data (prefer periodic over aperiodic)
     vitals_stem = None
     for stem in ["vitalperiodic", "vitalaperiodic", "vitalPeriodic", "vitalAperiodic"]:
         try:
@@ -69,15 +65,14 @@ def build_events(raw_dir: Path, out_dir: Path) -> None:
 
     vitals = _read_csv(vitals_path)
 
-    # your columns (from you):
-    # patientunitstayid, observationoffset, sao2, heartrate, systemicmean, ...
+    # Check required columns exist
     for c in ["patientunitstayid", "observationoffset"]:
         if c not in vitals.columns:
             raise ValueError(f"{vitals_path.name} missing '{c}'. Columns: {vitals.columns.tolist()}")
 
     vitals["time_hours"] = vitals["observationoffset"] / 60.0
 
-    # We’ll use: heartrate, systemicmean (MAP proxy), sao2
+    # Extract available vitals: heart rate, MAP, SpO2
     vital_vars = []
     if "heartrate" in vitals.columns:
         vital_vars.append(("heartrate", "HR"))
@@ -102,9 +97,7 @@ def build_events(raw_dir: Path, out_dir: Path) -> None:
 
     vital_events = pd.concat(vital_events, ignore_index=True)
 
-    # -----------------------
-    # 3) LABS
-    # -----------------------
+    # Load lab results
     lab_path = _find(raw_dir, "lab")
     lab = _read_csv(lab_path)
 
@@ -128,16 +121,12 @@ def build_events(raw_dir: Path, out_dir: Path) -> None:
     )[["patient_id", "time_hours", "variable", "value"]]
     lab_events["event_type"] = "lab"
 
-    # -----------------------
-    # 4) COMBINE + ADD HOSPITAL ID
-    # -----------------------
+    # Merge everything and add hospital IDs
     events = pd.concat([vital_events, lab_events], ignore_index=True)
     events = events.merge(labels[["patient_id", "hospital_id"]], on="patient_id", how="left")
     events = events.sort_values(["patient_id", "time_hours"]).reset_index(drop=True)
 
-    # -----------------------
-    # 5) SAVE
-    # -----------------------
+    # Save to parquet
     events_path = out_dir / "events.parquet"
     labels_path = out_dir / "labels.parquet"
 

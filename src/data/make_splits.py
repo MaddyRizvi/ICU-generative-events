@@ -15,12 +15,7 @@ def make_splits(
     val_patient_frac: float = 0.1,
     seed: int = 42,
 ) -> None:
-    """
-    Create hospital-held-out splits.
-
-    - Test set: patients from held-out hospitals
-    - Train/Val: patients from remaining hospitals
-    """
+    """Create hospital-held-out train/val/test splits."""
 
     rng = np.random.default_rng(seed)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -34,9 +29,7 @@ def make_splits(
             f"Found: {set(labels.columns)}"
         )
 
-    # -------------------------
-    # 1) Select test hospitals
-    # -------------------------
+    # Pick hospitals to hold out for testing
     hospitals = labels["hospital_id"].dropna().unique()
     hospitals = hospitals.astype(int)
 
@@ -46,9 +39,7 @@ def make_splits(
     test_hospitals = set(hospitals[:n_test_hospitals])
     train_hospitals = set(hospitals[n_test_hospitals:])
 
-    # -------------------------
-    # 2) Split patients
-    # -------------------------
+    # Split patients by hospital
     test_patients = labels[labels["hospital_id"].isin(test_hospitals)]
     trainval_patients = labels[labels["hospital_id"].isin(train_hospitals)]
 
@@ -63,9 +54,7 @@ def make_splits(
     train_patients = trainval_patients[trainval_patients["patient_id"].isin(train_ids)]
     val_patients = trainval_patients[trainval_patients["patient_id"].isin(val_ids)]
 
-    # -------------------------
-    # 3) Save outputs
-    # -------------------------
+    # Save splits to disk
     train_patients.to_parquet(out_dir / "train_patients.parquet", index=False)
     val_patients.to_parquet(out_dir / "val_patients.parquet", index=False)
     test_patients.to_parquet(out_dir / "test_patients.parquet", index=False)

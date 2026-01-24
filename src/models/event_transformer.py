@@ -5,14 +5,7 @@ import torch.nn as nn
 
 
 class EventTransformer(nn.Module):
-    """
-    Transformer encoder that embeds:
-      - variable_id
-      - value_bin
-      - dt_bucket
-      - position
-    and predicts variable_id + value_bin for masked events.
-    """
+    """Transformer for masked event modeling (predicts masked variable/value pairs)."""
 
     def __init__(
         self,
@@ -54,12 +47,7 @@ class EventTransformer(nn.Module):
         self.val_head = nn.Linear(d_model, n_val_tokens)
 
     def forward(self, var_ids, val_ids, dt_bucket, attn_mask=None):
-        """
-        var_ids:   (B, T)
-        val_ids:   (B, T)
-        dt_bucket: (B, T)
-        attn_mask: (B, T) bool, True for real tokens, False for padding
-        """
+        """Predict masked variable and value tokens."""
         B, T = var_ids.shape
         if T > self.max_len:
             raise ValueError(f"Sequence length {T} exceeds max_len={self.max_len}")
@@ -68,21 +56,20 @@ class EventTransformer(nn.Module):
 
         x = self.var_emb(var_ids) + self.val_emb(val_ids) + self.dt_emb(dt_bucket) + self.pos_emb(pos)
 
-        # Transformer expects key_padding_mask=True for pads. Our attn_mask is True for real tokens.
+        # Invert mask for PyTorch (True = padding)
         key_padding_mask = None
         if attn_mask is not None:
-            key_padding_mask = ~attn_mask  # pads = True
+            key_padding_mask = ~attn_mask
 
         h = self.encoder(x, src_key_padding_mask=key_padding_mask)
         h = self.norm(h)
 
-        var_logits = self.var_head(h)  # (B,T,n_var_tokens)
-        val_logits = self.val_head(h)  # (B,T,n_val_tokens)
+        var_logits = self.var_head(h)
+        val_logits = self.val_head(h)
         return var_logits, val_logits
+
     def encode(self, var_ids, val_ids, dt_bucket, attn_mask=None):
-        """
-        Returns hidden states h: (B, T, d_model)
-        """
+        """Return encoded hidden states (for downstream tasks)."""
         B, T = var_ids.shape
         if T > self.max_len:
             raise ValueError(f"Sequence length {T} exceeds max_len={self.max_len}")

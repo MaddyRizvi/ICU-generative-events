@@ -16,9 +16,7 @@ from src.train.clf_datasets import PatientMortalityDataset
 
 
 def _load_splits(labels_dir: Path, labels: pd.DataFrame, seed: int = 42):
-    """
-    Uses make_splits outputs if available; otherwise fallback to random split.
-    """
+    """Load hospital-holdout splits or fall back to random split."""
     train_p = labels_dir / "train_patients.parquet"
     val_p = labels_dir / "val_patients.parquet"
     test_p = labels_dir / "test_patients.parquet"
@@ -29,7 +27,7 @@ def _load_splits(labels_dir: Path, labels: pd.DataFrame, seed: int = 42):
         test_ids = pd.read_parquet(test_p)["patient_id"].unique()
         return train_ids, val_ids, test_ids, "hospital_holdout"
 
-    # fallback: random patient split 80/10/10
+    # Fall back to random 80/10/10 split
     pids = labels["patient_id"].unique()
     rng = np.random.default_rng(seed)
     rng.shuffle(pids)
@@ -43,9 +41,7 @@ def _load_splits(labels_dir: Path, labels: pd.DataFrame, seed: int = 42):
 
 
 def _mean_pool(h: torch.Tensor, attn: torch.Tensor) -> torch.Tensor:
-    """
-    h: (B,T,D), attn: (B,T) bool
-    """
+    """Mean pooling over sequence length using attention mask."""
     attn_f = attn.float().unsqueeze(-1)  # (B,T,1)
     denom = attn_f.sum(dim=1).clamp(min=1.0)
     return (h * attn_f).sum(dim=1) / denom
@@ -75,7 +71,7 @@ def evaluate(model, head, loader, device):
     y_true = np.concatenate(ys)
     y_prob = np.concatenate(ps)
 
-    # Guard for edge cases (all one class)
+    # Handle edge case where all labels are the same
     metrics = {}
     if len(np.unique(y_true)) > 1:
         metrics["auroc"] = float(roc_auc_score(y_true, y_prob))
@@ -112,7 +108,7 @@ def main():
     tokens = pd.read_parquet(args.tokens)
     labels = pd.read_parquet(args.labels)
 
-    # Checkpoint
+    # Load pretrained checkpoint
     ckpt = torch.load(args.pretrained, map_location="cpu")
     cfg = ckpt["config"]
 
@@ -135,7 +131,7 @@ def main():
         for p_ in model.parameters():
             p_.requires_grad = False
 
-    # Small classifier head
+    # Add a classifier head on top
     head = nn.Sequential(
         nn.Linear(cfg["d_model"], cfg["d_model"]),
         nn.GELU(),
@@ -143,7 +139,7 @@ def main():
         nn.Linear(cfg["d_model"], 1),
     ).to(device)
 
-    # Splits
+    # Load train/val/test splits
     labels_dir = Path(args.labels).parent
     train_ids, val_ids, test_ids, split_type = _load_splits(labels_dir, labels, seed=args.seed)
     print(f"Split type: {split_type} | train={len(train_ids)} val={len(val_ids)} test={len(test_ids)}")
@@ -197,7 +193,7 @@ def main():
 
         history.append({"epoch": epoch, "train_loss": train_loss, "val": val_metrics})
 
-        # Use AUROC if available, else AUPRC
+        # Pick best metric (AUROC preferred, fallback to AUPRC)
         score = val_metrics["auroc"] if val_metrics["auroc"] is not None else (val_metrics["auprc"] or 0.0)
         if score > best_val:
             best_val = score

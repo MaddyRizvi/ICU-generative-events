@@ -15,10 +15,7 @@ from .datasets import MaskConfig, PatientSequenceDataset
 
 
 def load_patient_split(labels_path: Path, seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
-    """
-    If train/val files exist, use them.
-    Else create a simple random patient split (90/10).
-    """
+    """Load train/val splits from files, or create random 90/10 split."""
     train_path = labels_path.parent / "train_patients.parquet"
     val_path = labels_path.parent / "val_patients.parquet"
 
@@ -69,13 +66,12 @@ def main() -> None:
     if not required.issubset(tok.columns):
         raise ValueError(f"tokens.parquet must contain {required}. Found: {set(tok.columns)}")
 
-    # Define vocab sizes and reserve last id as MASK
+    # Calculate vocab sizes (reserve last token ID as MASK)
     max_var = int(tok["variable_id"].max())
     max_val = int(tok["value_bin"].max())
-    n_var_tokens = max_var + 2  # +1 for inclusive, +1 for MASK id at end
+    n_var_tokens = max_var + 2  # +1 for 0-index, +1 for MASK token
     n_val_tokens = max_val + 2
 
-    # Ensure PAD=0 exists (already), actual tokens start at 1, MASK is last id.
     print(f"n_var_tokens={n_var_tokens} (MASK id={n_var_tokens-1})")
     print(f"n_val_tokens={n_val_tokens} (MASK id={n_val_tokens-1})")
 
@@ -142,7 +138,7 @@ def main() -> None:
 
             var_logits, val_logits = model(var_in, val_in, dt_in, attn_mask=attn_mask)
 
-            # Compute loss only on masked positions
+            # Only compute loss on masked tokens
             B, T, _ = var_logits.shape
             mask_flat = mask_pos.view(-1)
             if mask_flat.sum().item() == 0:

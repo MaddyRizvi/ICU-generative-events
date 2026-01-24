@@ -10,12 +10,10 @@ from torch.utils.data import Dataset
 
 
 def bucketize_dt(dt_hours: np.ndarray, n_buckets: int = 16) -> np.ndarray:
-    """
-    Log-spaced bucketing for time gaps (hours).
-    """
+    """Bucket time gaps into log-spaced bins."""
     dt = np.clip(dt_hours, 0.0, None)
-    # buckets boundaries in hours (roughly: seconds -> days)
-    edges = np.geomspace(1e-4, 48.0, num=n_buckets)  # 0.0001h ~ 0.36s to 48h
+    # Log-spaced buckets from 0.36 seconds to 48 hours
+    edges = np.geomspace(1e-4, 48.0, num=n_buckets)
     idx = np.digitize(dt, edges, right=False) - 1
     return np.clip(idx, 0, n_buckets - 1).astype(np.int64)
 
@@ -25,22 +23,10 @@ class MaskConfig:
     mask_prob: float = 0.15
     replace_with_mask_prob: float = 0.8
     replace_with_random_prob: float = 0.1
-    # remaining 0.1 keeps original (BERT-style)
 
 
 class PatientSequenceDataset(Dataset):
-    """
-    Builds fixed-length chunks from per-patient event sequences.
-
-    Inputs per event:
-      - variable_id (int)
-      - value_bin (int)
-      - dt_hours (float) -> dt_bucket (int)
-
-    Returns tensors:
-      var_in, val_in, dt_bucket, attn_mask,
-      var_target, val_target, mask_positions (bool)
-    """
+    """Builds fixed-length chunks from patient event sequences with BERT-style masking."""
 
     def __init__(
         self,
@@ -60,22 +46,22 @@ class PatientSequenceDataset(Dataset):
         self.mask_cfg = mask_cfg
         self.rng = np.random.default_rng(seed)
 
-        # Filter and sort
+        # Filter tokens to selected patients and sort
         df = tokens[tokens["patient_id"].isin(patient_ids)].copy()
         df = df.sort_values(["patient_id", "time_hours"]).reset_index(drop=True)
 
-        # Group by patient
+        # Group events by patient
         self.patient_groups: Dict[int, pd.DataFrame] = {
             int(pid): g for pid, g in df.groupby("patient_id", sort=False)
         }
 
-        # Build an index of (patient_id, start_idx) windows
+        # Create sliding windows for training
         self.windows: List[Tuple[int, int]] = []
         for pid, g in self.patient_groups.items():
             n = len(g)
             if n == 0:
                 continue
-            # stride = max_len (non-overlapping). You can make it smaller later if you want more windows.
+            # Non-overlapping windows
             for start in range(0, n, max_len):
                 self.windows.append((pid, start))
 
@@ -95,7 +81,7 @@ class PatientSequenceDataset(Dataset):
 
         dt_bucket = bucketize_dt(dt, n_buckets=self.n_dt_buckets)
 
-        # Padding to max_len
+        # Pad sequences to fixed length
         var_in = np.zeros((self.max_len,), dtype=np.int64)
         val_in = np.zeros((self.max_len,), dtype=np.int64)
         dt_in = np.zeros((self.max_len,), dtype=np.int64)
@@ -106,11 +92,11 @@ class PatientSequenceDataset(Dataset):
         dt_in[:T] = dt_bucket
         attn_mask[:T] = True
 
-        # Targets are original (before masking)
+        # Save original values as targets
         var_tgt = var_in.copy()
         val_tgt = val_in.copy()
 
-        # Choose mask positions only among real tokens and not padding
+        # Randomly pick positions to mask
         mask_positions = np.zeros((self.max_len,), dtype=np.bool_)
         real_positions = np.where(attn_mask)[0]
         if len(real_positions) > 0:
@@ -118,8 +104,7 @@ class PatientSequenceDataset(Dataset):
             chosen = self.rng.choice(real_positions, size=n_mask, replace=False)
             mask_positions[chosen] = True
 
-            # Apply masking strategy
-            # We'll use special MASK ids as (n_var_tokens-1) and (n_val_tokens-1) if you pass them that way.
+            # Apply BERT-style masking (80% mask token, 10% random, 10% keep)
             var_mask_id = self.n_var_tokens - 1
             val_mask_id = self.n_val_tokens - 1
 
@@ -129,11 +114,11 @@ class PatientSequenceDataset(Dataset):
                     var_in[pos] = var_mask_id
                     val_in[pos] = val_mask_id
                 elif p < self.mask_cfg.replace_with_mask_prob + self.mask_cfg.replace_with_random_prob:
-                    # random token (avoid 0=PAD)
+                    # Replace with random token
                     var_in[pos] = int(self.rng.integers(1, self.n_var_tokens - 1))
                     val_in[pos] = int(self.rng.integers(0, self.n_val_tokens - 1))
                 else:
-                    # keep original
+                    # Keep original value
                     pass
 
         return (

@@ -17,43 +17,40 @@ def fit_tokenizer(events_path: Path, out_dir: Path, variables: List[str]) -> Non
 
     events = pd.read_parquet(events_path)
 
-    # Expect columns from your Step 7 builder:
-    # patient_id, time_hours, event_type, variable, value, hospital_id
+    # Validate required columns
     required = {"patient_id", "time_hours", "variable", "value"}
     if not required.issubset(events.columns):
         raise ValueError(f"events.parquet must contain {required}. Found: {set(events.columns)}")
 
-    # Normalize variable names
     events["variable"] = events["variable"].astype(str).str.strip()
 
-    # If user passed variables, restrict; else use DEFAULT_VARS that exist
+    # Pick which variables to use (user-specified or default)
     if variables:
         keep = set([v.strip() for v in variables])
     else:
         keep = set([v for v in DEFAULT_VARS if v in set(events["variable"].unique())])
 
     if not keep:
-        # fallback: use top variables by frequency
+        # Fall back to top 10 most frequent variables
         keep = set(events["variable"].value_counts().head(10).index.tolist())
 
     events = events[events["variable"].isin(keep)].copy()
 
-    # Build variable vocab
-    # Reserve 0 for PAD if you want later; here start at 1
+    # Map each variable to a unique ID (starting at 1, 0 is for padding)
     var_list = sorted(keep)
     variable_vocab: Dict[str, int] = {v: i + 1 for i, v in enumerate(var_list)}
 
-    # Build value bins per variable (quantile bins are robust)
+    # Create quantile bins for each variable's values
     value_bins: Dict[str, Dict] = {}
     for v in var_list:
         vals = events.loc[events["variable"] == v, "value"].astype(float).replace([np.inf, -np.inf], np.nan).dropna()
         if len(vals) < 100:
-            # fallback to min/max bins if too few
+            # Not enough data for quantiles, use even spacing
             edges = np.linspace(vals.min(), vals.max(), num=11).tolist() if len(vals) else [0.0, 1.0]
         else:
-            # 10 bins by quantiles
+            # 10 quantile-based bins
             qs = np.quantile(vals, np.linspace(0.0, 1.0, 11))
-            # ensure strictly increasing edges
+            # Remove duplicate edges to keep bins monotonic
             qs = np.unique(qs)
             if len(qs) < 3:
                 qs = np.linspace(vals.min(), vals.max(), num=11)
