@@ -8,7 +8,7 @@ ICU data present major challenges for machine learning due to irregular sampling
 This repository implements an end-to-end clinical ML pipeline inspired by recent “foundation model” approaches for ICU data:
 1) convert ICU tables into **irregular event streams** (vitals/labs),
 2) learn general patient representations via **self-supervised masked event modeling**,
-3) fine-tune the pretrained backbone for **mortality prediction**, and
+3) fine-tune the pretrained backbone for **mortality prediction** and
 4) evaluate **cross-hospital generalisation** using hospital-held-out splits.
 
 > Motivation: ICU data are not like text. Measurements occur at irregular times, values are continuous, and missingness is decision-driven (what is recorded depends on clinical choices). Models trained on one hospital often fail to generalise to others. This repo provides a reproducible baseline for generative pretraining on event sequences and evaluating domain shift.
