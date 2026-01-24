@@ -58,7 +58,7 @@ This repository implements an end-to-end clinical ML pipeline inspired by recent
 We represent each ICU stay as a **sequence of clinical events**, each event containing:
 - `patient_id`
 - `time_hours` (since unit admission)
-- `variable` (e.g., HR, MAP, SpO2, lactate, creatinine)
+- `variable` (HR, MAP, SpO2, lactate, creatinine)
 - `value` (continuous measurement)
 - `hospital_id` (domain identifier for generalisation experiments)
 
@@ -70,7 +70,6 @@ We then tokenize events into:
 Pretraining uses **Masked Event Modeling** (BERT-style):
 - randomly mask event content,
 - train a Transformer encoder to reconstruct masked `variable_id` and `value_bin`.
-
 ---
 
 ## Data: eICU Collaborative Research Database (CSV.GZ)
